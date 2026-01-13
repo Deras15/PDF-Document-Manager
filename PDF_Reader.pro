@@ -1,0 +1,18 @@
+QT       += core gui widgets concurrent
+
+TARGET = PDF_Reader
+TEMPLATE = app
+
+CONFIG += c++11 link_pkgconfig
+PKGCONFIG += poppler-qt5
+
+DEFINES += QT_DEPRECATED_WARNINGS
+
+SOURCES += \
+        main.cpp \
+        mainwindow.cpp \
+        pdfsearchpanel.cpp
+
+HEADERS += \
+        mainwindow.h \
+        pdfsearchpanel.h
