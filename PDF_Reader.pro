@@ -11,8 +11,14 @@ DEFINES += QT_DEPRECATED_WARNINGS
 SOURCES += \
         main.cpp \
         mainwindow.cpp \
-        pdfsearchpanel.cpp
+        pdfsearchpanel.cpp \
+    custom_widgets.cpp \
+    librarysidebar.cpp \
+    pdfviewport.cpp
 
 HEADERS += \
         mainwindow.h \
-        pdfsearchpanel.h
+        pdfsearchpanel.h \
+    custom_widgets.h \
+    librarysidebar.h \
+    pdfviewport.h

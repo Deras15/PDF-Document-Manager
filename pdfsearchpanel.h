@@ -1,12 +1,13 @@
 /*
  * PDF Reader
- * Copyright (c) 2024 [Muzon4ik]
+ * Copyright (c) 2026 [Muzon4ik]
  * 
  * Restricted License:
  * This project is for portfolio demonstration and educational use only.
  * Commercial use, resale, or distribution for profit is strictly prohibited.
  */
 //pdfsearchpanel.h
+    
 #ifndef PDFSEARCHPANEL_H
 #define PDFSEARCHPANEL_H
 
@@ -40,24 +41,22 @@ private slots:
     void onReset();
 
 private:
-    Poppler::Document *doc;
-    QMutex *docMutex; 
+    Poppler::Document *doc = nullptr;
+    QMutex *docMutex = nullptr; 
 
     QLineEdit *searchField;
     QPushButton *btnStart;
     QLabel *lblStatus;
     QWidget *navWidget;
-    QPushButton *btnNext;
-    QPushButton *btnPrev;
-    QPushButton *btnReset;
+    QPushButton *btnNext, *btnPrev, *btnReset;
     
     QList<QPair<int, QRectF>> searchResults; 
-    int currentIndex;
+    int currentIndex = -1;
 
     QFutureWatcher<QList<QPair<int, QRectF>>> *searchWatcher;
     QAtomicInt currentSearchCanceled; 
 };
 
-#endif
+#endif // PDFSEARCHPANEL_H
 
   

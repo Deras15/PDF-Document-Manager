@@ -1,6 +1,6 @@
 /*
  * PDF Reader
- * Copyright (c) 2024 [Muzon4ik]
+ * Copyright (c) 2026 [Muzon4ik]
  * 
  * Restricted License:
  * This project is for portfolio demonstration and educational use only.
