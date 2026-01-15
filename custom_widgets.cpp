@@ -34,8 +34,6 @@ void PageWidget::setLoading() {
 void PageWidget::paintEvent(QPaintEvent *) {
     QPainter painter(this);
     painter.setRenderHint(QPainter::SmoothPixmapTransform);
-    painter.setRenderHint(QPainter::TextAntialiasing);
-    painter.setRenderHint(QPainter::Antialiasing);
 
     painter.fillRect(rect(), Qt::white);
 
@@ -43,18 +41,21 @@ void PageWidget::paintEvent(QPaintEvent *) {
         painter.drawPixmap(rect(), m_currentPixmap);
     }
 
-    if (m_loading) {
-        painter.fillRect(rect(), QColor(255, 255, 255, 150));
+    if (m_loading && m_currentPixmap.isNull()) { 
+        painter.save();
+        painter.setRenderHint(QPainter::Antialiasing);
         painter.translate(width() / 2, height() / 2);
         painter.rotate(m_rotation);
         QPen pen(QColor(41, 128, 185));
         pen.setWidth(4);
-        pen.setCapStyle(Qt::RoundCap);
         painter.setPen(pen);
         painter.drawArc(-20, -20, 40, 40, 0, 270 * 16);
+        painter.restore();
+    } 
+    else if (m_loading && !m_currentPixmap.isNull()) {
+        painter.fillRect(rect(), QColor(255, 255, 255, 40)); 
     }
     
-    painter.resetTransform();
     painter.setPen(QColor(180, 180, 180));
     painter.drawRect(0, 0, width() - 1, height() - 1);
 }

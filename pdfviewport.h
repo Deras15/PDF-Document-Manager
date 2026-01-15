@@ -18,6 +18,7 @@
 #include <QMap>
 #include <QFutureWatcher>
 #include <poppler-qt5.h>
+#include <QThread>
 #include "custom_widgets.h"
 
 class PdfViewPort : public QScrollArea {
@@ -53,6 +54,7 @@ private:
     void performZoomOrResize();
     void updateGridHelper();
     void clearLayout();
+    void cancelAllRenders();
 
     Poppler::Document *m_doc = nullptr;
     QMutex *m_docMutex = nullptr;
@@ -68,6 +70,8 @@ private:
     
     QTimer *renderTimer;
     QMap<int, QFutureWatcher<QImage>*> activeRenders;
+
+    double m_accumulatedZoomDelta = 0;
 };
 
 #endif // PDFVIEWPORT_H
