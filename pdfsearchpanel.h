@@ -7,7 +7,6 @@
  * Commercial use, resale, or distribution for profit is strictly prohibited.
  */
 //pdfsearchpanel.h
-    
 #ifndef PDFSEARCHPANEL_H
 #define PDFSEARCHPANEL_H
 
@@ -27,7 +26,9 @@ class PdfSearchPanel : public QWidget {
 public:
     explicit PdfSearchPanel(QWidget *parent = nullptr);
     void setDocument(Poppler::Document *newDoc, QMutex *mutex); 
-    void cancelSearch(); 
+    void cancelSearch();
+    void setFilePath(const QString &path);
+    void focusIn() { searchField->setFocus(); }
 
 signals:
     void pageFound(int pageIndex, QString text, QRectF rect);
@@ -42,7 +43,8 @@ private slots:
 
 private:
     Poppler::Document *doc = nullptr;
-    QMutex *docMutex = nullptr; 
+    QMutex *docMutex = nullptr;
+    QString m_currentDocPath;
 
     QLineEdit *searchField;
     QPushButton *btnStart;

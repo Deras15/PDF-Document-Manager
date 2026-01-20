@@ -6,8 +6,7 @@
  * This project is for portfolio demonstration and educational use only.
  * Commercial use, resale, or distribution for profit is strictly prohibited.
  */
-//mainwindow.h    
-    
+//mainwindow.h  
 #ifndef MAINWINDOW_H
 #define MAINWINDOW_H
 
@@ -35,12 +34,16 @@ private slots:
     void onSearchReset();
     void onZoomChanged(double value);
     void onFitWidthToggled(bool checked);
+    void onChangeLibraryPath();
 
 private:
+    void loadSettings();
+    void saveSettings();
     void setupUI();
 
     Poppler::Document *doc = nullptr;
     QMutex docMutex;
+    QString m_libraryPath;
 
     LibrarySidebar *sidebar;
     PdfViewPort *viewPort;

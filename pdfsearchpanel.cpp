@@ -25,6 +25,10 @@ PdfSearchPanel::PdfSearchPanel(QWidget *parent) : QWidget(parent) {
     navWidget = new QWidget();
     QHBoxLayout *navLayout = new QHBoxLayout(navWidget);
     navLayout->setContentsMargins(0,0,0,0);
+
+    QPushButton *btnClose = new QPushButton("×");
+    btnClose->setFixedSize(25, 25);
+    btnClose->setStyleSheet("QPushButton { border: none; font-size: 18px; color: #666; } QPushButton:hover { color: red; }");
     
     btnPrev = new QPushButton("<");
     btnNext = new QPushButton(">");
@@ -39,6 +43,7 @@ PdfSearchPanel::PdfSearchPanel(QWidget *parent) : QWidget(parent) {
     layout->addWidget(searchField);
     layout->addWidget(btnStart);
     layout->addWidget(navWidget);
+    layout->addWidget(btnClose);
 
     searchWatcher = new QFutureWatcher<QList<QPair<int, QRectF>>>(this);
     connect(searchWatcher, &QFutureWatcher<QList<QPair<int, QRectF>>>::finished, this, &PdfSearchPanel::onSearchFinished);
@@ -47,6 +52,11 @@ PdfSearchPanel::PdfSearchPanel(QWidget *parent) : QWidget(parent) {
     connect(btnNext, &QPushButton::clicked, this, &PdfSearchPanel::onNext);
     connect(btnPrev, &QPushButton::clicked, this, &PdfSearchPanel::onPrev);
     connect(btnReset, &QPushButton::clicked, this, &PdfSearchPanel::onReset);
+    connect(btnClose, &QPushButton::clicked, this, &PdfSearchPanel::hide);
+}
+
+void PdfSearchPanel::setFilePath(const QString &path) {
+    m_currentDocPath = path;
 }
 
 void PdfSearchPanel::setDocument(Poppler::Document *newDoc, QMutex *mutex) {
@@ -63,30 +73,33 @@ void PdfSearchPanel::cancelSearch() {
 
 void PdfSearchPanel::onFindStart() {
     QString text = searchField->text().trimmed();
-    if (text.isEmpty() || !doc || !docMutex) return;
+    if (text.isEmpty() || m_currentDocPath.isEmpty()) return;
 
     onReset();
     currentSearchCanceled.store(0);
     lblStatus->setText("...");
     btnStart->setEnabled(false);
 
-    QFuture<QList<QPair<int, QRectF>>> future = QtConcurrent::run([this, text]() {
-        QList<QPair<int, QRectF>> results;
-        int nPages = 0;
-        { QMutexLocker locker(this->docMutex); if (this->doc) nPages = this->doc->numPages(); }
+    QString localPath = m_currentDocPath;
 
-        for (int i = 0; i < nPages; ++i) {
+    QFuture<QList<QPair<int, QRectF>>> future = QtConcurrent::run([this, text, localPath]() {
+        QList<QPair<int, QRectF>> results;
+        Poppler::Document *searchDoc = Poppler::Document::load(localPath);
+        if (!searchDoc) return results;
+
+        for (int i = 0; i < searchDoc->numPages(); ++i) {
             if (this->currentSearchCanceled.load() == 1) break;
-            QMutexLocker locker(this->docMutex);
-            if (this->doc) {
-                Poppler::Page *page = this->doc->page(i);
-                if (page) {
-                    for (const QRectF &rect : page->search(text, Poppler::Page::IgnoreCase))
-                        results.append(qMakePair(i, rect));
-                    delete page;
+            
+            Poppler::Page *page = searchDoc->page(i);
+            if (page) {
+                QList<QRectF> found = page->search(text, Poppler::Page::IgnoreCase);
+                for (const QRectF &rect : found) {
+                    results.append(qMakePair(i, rect));
                 }
+                delete page;
             }
         }
+        delete searchDoc;
         return results;
     });
     searchWatcher->setFuture(future);

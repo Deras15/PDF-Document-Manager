@@ -7,6 +7,7 @@
  * This project is for portfolio demonstration and educational use only.
  * Commercial use, resale, or distribution for profit is strictly prohibited.
  */
+ //librarysidebar.h
 #ifndef LIBRARYSIDEBAR_H
 #define LIBRARYSIDEBAR_H
 
@@ -19,6 +20,7 @@ class LibrarySidebar : public QTreeWidget {
 public:
     explicit LibrarySidebar(QWidget *parent = nullptr);
     void scanDirectory(const QString &path);
+    void markOpenedFile(const QString &filePath);
 
 signals:
     void fileSelected(const QString &filePath);

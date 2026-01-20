@@ -6,6 +6,7 @@
  * This project is for portfolio demonstration and educational use only.
  * Commercial use, resale, or distribution for profit is strictly prohibited.
  */
+ //pdfviewport.cpp
 #include "pdfviewport.h"
 #include <QPainter>
 #include <QtConcurrent>
@@ -25,7 +26,7 @@ PdfViewPort::PdfViewPort(QWidget *parent) : QScrollArea(parent) {
 
     renderTimer = new QTimer(this);
     renderTimer->setSingleShot(true);
-    renderTimer->setInterval(700);
+    renderTimer->setInterval(300);
     connect(renderTimer, &QTimer::timeout, this, &PdfViewPort::onRenderTimeout);
     connect(verticalScrollBar(), &QScrollBar::valueChanged, this, &PdfViewPort::onScrollValueChanged);
 }
@@ -53,17 +54,26 @@ void PdfViewPort::cancelAllRenders() {
 
 void PdfViewPort::setDocument(Poppler::Document *doc, QMutex *mutex) {
     stopAllRenders();
-    
     m_doc = doc;
     m_docMutex = mutex;
+    
+    m_originalPageSizes.clear();
     clearLayout();
     
     if (m_doc) {
         int total = 0;
         {
-
             QMutexLocker locker(m_docMutex);
             total = m_doc->numPages();
+            for (int i = 0; i < total; ++i) {
+                Poppler::Page *p = m_doc->page(i);
+                if (p) {
+                    m_originalPageSizes.append(p->pageSize());
+                    delete p;
+                } else {
+                    m_originalPageSizes.append(QSize(600, 800));
+                }
+            }
         }
 
         for (int i = 0; i < total; ++i) {
@@ -74,7 +84,6 @@ void PdfViewPort::setDocument(Poppler::Document *doc, QMutex *mutex) {
 
         performZoomOrResize();
         verticalScrollBar()->setValue(0);
-        verticalScrollBar()->setSingleStep(25);
     }
 }
 
@@ -90,7 +99,12 @@ void PdfViewPort::setFitWidth(bool fit) {
 
 void PdfViewPort::resizeEvent(QResizeEvent *event) {
     QScrollArea::resizeEvent(event);
-    renderTimer->start();
+    
+    if (m_fitWidth) {
+        performZoomOrResize(); 
+    } else {
+        renderTimer->start();
+    }
 }
 
 void PdfViewPort::onRenderTimeout() {
@@ -125,7 +139,7 @@ void PdfViewPort::onScrollValueChanged(int value) {
         emit pageInViewChanged(foundPage);
     }
     
-     renderTimer->start(200);
+     renderTimer->start(10);
 }
 
 void PdfViewPort::performZoomOrResize() {
@@ -156,35 +170,29 @@ void PdfViewPort::performZoomOrResize() {
 
     scrollContainer->setUpdatesEnabled(true);
     
-    renderTimer->start(700); 
+    renderTimer->start(300);
+}
+
+void PdfViewPort::setFilePath(const QString &path) {
+    m_docPath = path;
 }
 
 void PdfViewPort::updateGridHelper() {
-    if (!m_doc || pageLabels.isEmpty()) return;
-
-    QSize referenceSize;
-    {
-        QMutexLocker locker(m_docMutex);
-        Poppler::Page *firstPage = m_doc->page(0);
-        if (firstPage) {
-            referenceSize = firstPage->pageSize();
-            delete firstPage;
-        } else {
-            referenceSize = QSize(600, 800);
-        }
-    }
+    if (pageLabels.isEmpty() || m_originalPageSizes.isEmpty()) return;
 
     int viewW = viewport()->width() - 40;
     if (viewW < 100) viewW = 100;
 
     for (int i = 0; i < pageLabels.size(); ++i) {
+        QSize pageSize = m_originalPageSizes[i];
+        
         int tw, th;
         if (m_fitWidth) {
             tw = viewW;
-            th = tw * referenceSize.height() / referenceSize.width();
+            th = tw * pageSize.height() / pageSize.width();
         } else {
-            tw = referenceSize.width() * m_currentZoom;
-            th = referenceSize.height() * m_currentZoom;
+            tw = pageSize.width() * m_currentZoom;
+            th = pageSize.height() * m_currentZoom;
         }
 
         if (pageLabels[i]->size() != QSize(tw, th)) {
@@ -201,7 +209,7 @@ void PdfViewPort::updateVisiblePages() {
     int viewportH = viewport()->height();
     int maxScroll = verticalScrollBar()->maximum();
 
-    int buffer = viewportH * 1.5;
+    int buffer = viewportH * 3.0;
     QRect renderZone(0, scrollY - buffer, viewport()->width(), viewportH + (buffer * 2));
 
     if (scrollY >= maxScroll - 20) {
@@ -233,17 +241,34 @@ void PdfViewPort::updateVisiblePages() {
 }
 
 void PdfViewPort::requestPageRender(int i) {
-    if (activeRenders.contains(i) || !m_doc) return;
+    if (activeRenders.contains(i)) return;
+
+    PageWidget *lbl = pageLabels[i];
+
+    if (!lbl->hasImage()) {
+        QMutexLocker locker(m_docMutex);
+        if (m_doc && i < m_doc->numPages()) {
+            Poppler::Page *p = m_doc->page(i);
+            if (p) {
+                QImage preview = p->renderToImage(72.0, 72.0); 
+                if (!preview.isNull()) {
+                    lbl->setPixmap(QPixmap::fromImage(preview));
+                }
+                delete p;
+            }
+        }
+    }
 
     if (activeRenders.size() >= QThread::idealThreadCount()) return;
-    
-    PageWidget *lbl = pageLabels[i];
+
     lbl->setLoading();
     QSize tSize = lbl->size();
     if (tSize.width() <= 0) return;
 
-    lbl->setLoading();
     double dpr = this->devicePixelRatioF();
+    QString docPath = m_docPath; 
+    QString sText = m_currentSearchText;
+    QRectF sRect = m_currentSearchRect;
 
     QFutureWatcher<QImage> *watcher = new QFutureWatcher<QImage>();
     activeRenders.insert(i, watcher);
@@ -257,57 +282,53 @@ void PdfViewPort::requestPageRender(int i) {
                 lbl->setProperty("rendered_zoom", m_fitWidth ? -1 : m_currentZoom);
             }
             activeRenders.remove(i);
+            
+            QTimer::singleShot(0, this, &PdfViewPort::updateVisiblePages);
         }
         watcher->deleteLater();
     });
 
-    QString sText = m_currentSearchText;
-    QRectF sRect = m_currentSearchRect;
-
-    watcher->setFuture(QtConcurrent::run([this, i, tSize, sText, sRect, dpr]() {
+    watcher->setFuture(QtConcurrent::run([i, tSize, sText, sRect, dpr, docPath]() {
         QThread::currentThread()->setPriority(QThread::LowPriority);
         QImage img;
-        QSizeF pdfSize;
-        {
-            QMutexLocker locker(m_docMutex);
-            if (!m_doc || i >= m_doc->numPages()) return img;
-            Poppler::Page *p = m_doc->page(i);
-            if (p) {
-                pdfSize = p->pageSizeF();
-                
-                double zoomLevel = double(tSize.width()) / pdfSize.width();
-                double qualityMultiplier = (zoomLevel > 2.0) ? 1.0 : (zoomLevel > 1.2 ? 1.2 : 1.5); 
-                double targetDpi = 72.0 * zoomLevel * dpr * qualityMultiplier;
+        
+        if (docPath.isEmpty()) return img;
 
-                double maxWidthPx = 3500.0;
-                if ((pdfSize.width() / 72.0) * targetDpi > maxWidthPx) {
-                    targetDpi = (maxWidthPx * 72.0) / pdfSize.width();
-                }
-                
-                targetDpi = qBound(72.0, targetDpi, 400.0); 
+        Poppler::Document *threadDoc = Poppler::Document::load(docPath);
+        if (!threadDoc) return img;
+
+        threadDoc->setRenderHint(Poppler::Document::TextAntialiasing, true);
+        threadDoc->setRenderHint(Poppler::Document::Antialiasing, true);
+
+        if (i < threadDoc->numPages()) {
+            Poppler::Page *p = threadDoc->page(i);
+            if (p) {
+                QSizeF pdfSize = p->pageSizeF();
+                double zoomLevel = double(tSize.width()) / pdfSize.width();
+                double targetDpi = 72.0 * zoomLevel * dpr;
+                targetDpi = qBound(72.0, targetDpi, 300.0); 
+
                 img = p->renderToImage(targetDpi, targetDpi);
+
+                if (!img.isNull() && !sText.isEmpty()) {
+                    QList<QRectF> res = p->search(sText, Poppler::Page::IgnoreCase);
+                    if (!res.isEmpty()) {
+                        QPainter painter(&img);
+                        painter.setCompositionMode(QPainter::CompositionMode_Multiply);
+                        double sx = double(img.width()) / pdfSize.width();
+                        double sy = double(img.height()) / pdfSize.height();
+                        for (const QRectF &r : res) {
+                            bool active = qAbs(r.x() - sRect.x()) < 0.001;
+                            painter.setBrush(active ? QColor(255, 140, 0) : QColor(255, 235, 60));
+                            painter.setPen(Qt::NoPen);
+                            painter.drawRect(QRectF(r.x()*sx, r.y()*sy, r.width()*sx, r.height()*sy).adjusted(-2,-2,2,2));
+                        }
+                    }
+                }
                 delete p;
             }
         }
-        
-        if (img.isNull()) return img;
-
-        if (!sText.isEmpty()) {
-            QList<QRectF> res;
-            { QMutexLocker locker(m_docMutex); if(m_doc) { Poppler::Page *p = m_doc->page(i); res = p->search(sText, Poppler::Page::IgnoreCase); delete p; } }
-            if (!res.isEmpty()) {
-                QPainter painter(&img);
-                painter.setCompositionMode(QPainter::CompositionMode_Multiply);
-                double sx = double(img.width()) / pdfSize.width();
-                double sy = double(img.height()) / pdfSize.height();
-                for (const QRectF &r : res) {
-                    bool active = qAbs(r.x() - sRect.x()) < 0.001;
-                    painter.setBrush(active ? QColor(255, 140, 0) : QColor(255, 235, 60));
-                    painter.setPen(Qt::NoPen);
-                    painter.drawRect(QRectF(r.x()*sx, r.y()*sy, r.width()*sx, r.height()*sy).adjusted(-2,-2,2,2));
-                }
-            }
-        }
+        delete threadDoc;
         return img;
     }));
 }

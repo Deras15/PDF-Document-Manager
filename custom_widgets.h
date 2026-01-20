@@ -7,6 +7,7 @@
  * This project is for portfolio demonstration and educational use only.
  * Commercial use, resale, or distribution for profit is strictly prohibited.
  */
+ //custom_widgets.h
 #ifndef CUSTOM_WIDGETS_H
 #define CUSTOM_WIDGETS_H
 
@@ -14,7 +15,6 @@
 #include <QWidget>
 #include <QPixmap>
 #include <QPainter>
-#include <QTimer>
 #include <QWheelEvent>
 
 class InvertedSpinBox : public QSpinBox {
@@ -34,15 +34,14 @@ public:
     void setLoading();
     void clearPixmap();
     bool isLoading() const { return m_loading; }
+    bool hasImage() const { return !m_currentPixmap.isNull(); }
 
 protected:
     void paintEvent(QPaintEvent *event) override;
 
 private:
-    bool m_loading = true;
+    bool m_loading = false;
     QPixmap m_currentPixmap;
-    float m_rotation = 0;
-    QTimer *m_spinnerTimer;
 };
 
 #endif // CUSTOM_WIDGETS_H

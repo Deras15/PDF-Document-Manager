@@ -7,6 +7,7 @@
  * This project is for portfolio demonstration and educational use only.
  * Commercial use, resale, or distribution for profit is strictly prohibited.
  */
+ //pdfviewport.h
 #ifndef PDFVIEWPORT_H
 #define PDFVIEWPORT_H
 
@@ -28,6 +29,7 @@ public:
     ~PdfViewPort();
 
     void setDocument(Poppler::Document *doc, QMutex *mutex);
+    void setFilePath(const QString &path);
     void setZoom(double zoom);
     void setFitWidth(bool fit);
     void goToPage(int page, double yOffsetFraction = 0.0);
@@ -62,9 +64,11 @@ private:
     QWidget *scrollContainer;
     QVBoxLayout *scrollLayout;
     QList<PageWidget*> pageLabels;
+    QList<QSize> m_originalPageSizes;
     
     double m_currentZoom = 1.0;
     bool m_fitWidth = true;
+    QString m_docPath;
     QString m_currentSearchText;
     QRectF m_currentSearchRect;
     

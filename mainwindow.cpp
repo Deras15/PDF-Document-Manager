@@ -8,14 +8,22 @@
  */
 //mainwindow.cpp
 #include "mainwindow.h"
+#include <QMenuBar>
+#include <QMenu>
+#include <QAction>
 #include <QHBoxLayout>
 #include <QVBoxLayout>
 #include <QApplication>
 #include <QFrame>
+#include <QFileDialog>
+#include <QSettings>
+#include <QStandardPaths>
+#include <QShortcut>
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
+    loadSettings();
     setWindowTitle("Orion PDF Reader");
-    resize(1400, 900);
+    resize(900, 650);
 
     setupUI();
 
@@ -38,14 +46,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     connect(viewPort, &PdfViewPort::zoomRequested, [this](bool zoomIn){
     double currentVal = zoomSpinBox->value();
     if (zoomIn) {
-        zoomSpinBox->setValue(currentVal + 10.0);
+        zoomSpinBox->setValue(currentVal + 25.0);
     } else {
-        zoomSpinBox->setValue(currentVal - 10.0);
+        zoomSpinBox->setValue(currentVal - 25.0);
     }
 });
 
-    QString libPath = QDir::homePath() + "/Документы/PDF_Library";
-    sidebar->scanDirectory(libPath);
+     sidebar->scanDirectory(m_libraryPath); 
 }
 
 MainWindow::~MainWindow() {
@@ -55,9 +62,17 @@ MainWindow::~MainWindow() {
 }
 
 void MainWindow::setupUI() {
+    QMenu *settingsMenu = menuBar()->addMenu("Настройки");
+    
+    QAction *setPathAction = new QAction("Путь к библиотеке...", this);
+    connect(setPathAction, &QAction::triggered, this, &MainWindow::onChangeLibraryPath);
+    settingsMenu->addAction(setPathAction);
+    
     QSplitter *mainSplitter = new QSplitter(Qt::Horizontal, this);
     
     sidebar = new LibrarySidebar();
+    sidebar->setMinimumWidth(150);
+    sidebar->setMaximumWidth(500); 
     
     QWidget *rightContainer = new QWidget();
     QVBoxLayout *rightLayout = new QVBoxLayout(rightContainer);
@@ -69,8 +84,11 @@ void MainWindow::setupUI() {
     topBar->setFixedHeight(50);
     QHBoxLayout *topLayout = new QHBoxLayout(topBar);
 
-    searchPanel = new PdfSearchPanel();
-    topLayout->addWidget(searchPanel);
+    QPushButton *btnShowSearch = new QPushButton("🔍");
+    btnShowSearch->setFixedSize(35, 35);
+    btnShowSearch->setToolTip("Поиск (Ctrl+F)");
+    btnShowSearch->setStyleSheet("QPushButton { border: 1px solid #ccc; border-radius: 4px; background: white; font-size: 16px; } QPushButton:hover { background: #eee; }");
+    topLayout->addWidget(btnShowSearch);
     topLayout->addStretch();
 
     fitWidthCheck = new QCheckBox("По ширине");
@@ -78,9 +96,9 @@ void MainWindow::setupUI() {
     connect(fitWidthCheck, &QCheckBox::toggled, this, &MainWindow::onFitWidthToggled);
     
     zoomSpinBox = new QDoubleSpinBox();
-    zoomSpinBox->setRange(25.0, 400.0);
+    zoomSpinBox->setRange(25.0, 800.0);
     zoomSpinBox->setValue(100.0);
-    zoomSpinBox->setSingleStep(10.0);
+    zoomSpinBox->setSingleStep(25.0);
     zoomSpinBox->setSuffix("%");
     zoomSpinBox->setEnabled(false);
     connect(zoomSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &MainWindow::onZoomChanged);
@@ -100,17 +118,38 @@ void MainWindow::setupUI() {
     
     topLayout->addWidget(pageSelector);
     topLayout->addWidget(totalPagesLabel);
-
+    
     viewPort = new PdfViewPort();
 
+    searchPanel = new PdfSearchPanel();
+    searchPanel->hide();
+    searchPanel->setStyleSheet("background: #eee; border-top: 1px solid #ccc; padding: 5px;");
+
     rightLayout->addWidget(topBar);
-    rightLayout->addWidget(viewPort);
+    rightLayout->addWidget(viewPort, 1);
+    rightLayout->addWidget(searchPanel);
 
     mainSplitter->addWidget(sidebar);
     mainSplitter->addWidget(rightContainer);
+    mainSplitter->setCollapsible(0, false);
     mainSplitter->setStretchFactor(1, 1);
     
     setCentralWidget(mainSplitter);
+
+    auto toggleSearch = [this]() {
+        if (searchPanel->isVisible()) {
+            searchPanel->hide();
+        } else {
+            searchPanel->show();
+            searchPanel->focusIn();
+        }
+    };
+
+    connect(btnShowSearch, &QPushButton::clicked, toggleSearch);
+
+    QShortcut *searchShortcut = new QShortcut(QKeySequence("Ctrl+F"), this);
+    connect(searchShortcut, &QShortcut::activated, toggleSearch);
+
 }
 
 void MainWindow::openFile(const QString &filePath) {
@@ -118,11 +157,15 @@ void MainWindow::openFile(const QString &filePath) {
     searchPanel->cancelSearch();
     viewPort->stopAllRenders();
 
+    searchPanel->setFilePath(filePath); 
+
     Poppler::Document *newDoc = Poppler::Document::load(filePath);
     if (!newDoc || newDoc->isLocked()) {
         delete newDoc;
         return;
     }
+
+    sidebar->markOpenedFile(filePath);
 
     {
         QMutexLocker locker(&docMutex);
@@ -132,6 +175,7 @@ void MainWindow::openFile(const QString &filePath) {
     }
 
     viewPort->setDocument(doc, &docMutex);
+    viewPort->setFilePath(filePath);
     searchPanel->setDocument(doc, &docMutex);
     
     int total = doc->numPages();
@@ -168,4 +212,31 @@ void MainWindow::onZoomChanged(double value) {
 void MainWindow::onFitWidthToggled(bool checked) {
     zoomSpinBox->setEnabled(!checked);
     viewPort->setFitWidth(checked);
+}
+
+void MainWindow::loadSettings() {
+    QSettings settings("OrionCorp", "PDFReader");
+    
+    QString defaultPath = QStandardPaths::writableLocation(QStandardPaths::DocumentsLocation);
+    if (defaultPath.isEmpty()) defaultPath = QDir::homePath();
+
+    m_libraryPath = settings.value("libPath", defaultPath).toString();
+    
+    if (!QDir(m_libraryPath).exists()) {
+        m_libraryPath = defaultPath;
+    }
+}
+
+void MainWindow::saveSettings() {
+    QSettings settings("OrionCorp", "PDFReader");
+    settings.setValue("libPath", m_libraryPath);
+}
+
+void MainWindow::onChangeLibraryPath() {
+    QString dir = QFileDialog::getExistingDirectory(this, "Выбрать папку библиотеки", m_libraryPath);
+    if (!dir.isEmpty()) {
+        m_libraryPath = dir;
+        saveSettings();
+        sidebar->scanDirectory(m_libraryPath);
+    }
 }
