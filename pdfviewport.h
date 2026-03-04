@@ -31,7 +31,9 @@ public:
     void setDocument(Poppler::Document *doc, QMutex *mutex);
     void setFilePath(const QString &path);
     void setZoom(double zoom);
-    void setFitWidth(bool fit);
+    
+    double getZoom() const { return m_currentZoom; }
+
     void goToPage(int page, double yOffsetFraction = 0.0);
     void updateHighlight(const QString &text, QRectF rect);
     void clearSearch();
@@ -45,14 +47,16 @@ signals:
 protected:
     void resizeEvent(QResizeEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
+    void showEvent(QShowEvent *event) override;
 
 private slots:
     void onRenderTimeout();
-    void updateVisiblePages();
     void onScrollValueChanged(int value);
 
 private:
-    void requestPageRender(int index);
+    void updateVisiblePages(bool allowHD);
+    void requestPageRender(int index, int quality);
+    
     void performZoomOrResize();
     void updateGridHelper();
     void clearLayout();
@@ -66,8 +70,7 @@ private:
     QList<PageWidget*> pageLabels;
     QList<QSize> m_originalPageSizes;
     
-    double m_currentZoom = 1.0;
-    bool m_fitWidth = true;
+    double m_currentZoom = 1.0; 
     QString m_docPath;
     QString m_currentSearchText;
     QRectF m_currentSearchRect;

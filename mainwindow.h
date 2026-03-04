@@ -16,11 +16,29 @@
 #include <QCheckBox>
 #include <QLabel>
 #include <QMutex>
+#include <QTabWidget> 
+#include <QPointer>
 
 #include "librarysidebar.h"
 #include "pdfviewport.h"
 #include "pdfsearchpanel.h"
 #include "custom_widgets.h"
+
+class PdfTab : public QWidget {
+    Q_OBJECT
+public:
+    explicit PdfTab(const QString &path, QWidget *parent = nullptr);
+    ~PdfTab();
+
+    QString filePath;
+    Poppler::Document *doc = nullptr;
+    QMutex docMutex;
+
+    PdfViewPort *viewPort = nullptr;
+    PdfSearchPanel *searchPanel = nullptr;
+
+    bool loadDocument();
+};
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -30,31 +48,35 @@ public:
 
 private slots:
     void openFile(const QString &filePath);
-    void onPageFound(int index, QString text, QRectF rect);
+    void onTabChanged(int index);
+    void onTabCloseRequested(int index);
+    void onPageInViewChanged(int page);
+    void onZoomRequested(bool zoomIn);
+    void onPageFoundInTab(int index, QString text, QRectF rect); 
     void onSearchReset();
-    void onZoomChanged(double value);
-    void onFitWidthToggled(bool checked);
+    void onZoomSpinChanged(double value);
+    void onPageSpinChanged(int page);
+    void toggleSearchPanel();
+
     void onChangeLibraryPath();
 
 private:
     void loadSettings();
     void saveSettings();
     void setupUI();
+    
+    void updateSidebarMarkers();
 
-    Poppler::Document *doc = nullptr;
-    QMutex docMutex;
     QString m_libraryPath;
 
+    QTabWidget *tabWidget; 
     LibrarySidebar *sidebar;
-    PdfViewPort *viewPort;
-    PdfSearchPanel *searchPanel;
-
     InvertedSpinBox *pageSelector;
     QLabel *totalPagesLabel;
     QDoubleSpinBox *zoomSpinBox;
-    QCheckBox *fitWidthCheck;
+    QPushButton *btnShowSearch;
+
+    PdfTab* currentTab() const;
 };
 
 #endif // MAINWINDOW_H
-
-  

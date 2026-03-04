@@ -36,12 +36,9 @@
 Для сборки проекта необходимо наличие установленного Qt и заголовочных файлов Poppler.
 
 ```bash
-# Пример для Linux (Ubuntu/Debian)
+# Пример для Astra Linux
 sudo apt-get install libpoppler-qt5-dev
 
-# Сборка
-qmake PDF_Reader.pro
-make
 ```
 
     

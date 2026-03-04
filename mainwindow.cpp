@@ -19,47 +19,65 @@
 #include <QSettings>
 #include <QStandardPaths>
 #include <QShortcut>
+#include <QFileInfo>
+
+PdfTab::PdfTab(const QString &path, QWidget *parent) 
+    : QWidget(parent), filePath(path) 
+{
+    QVBoxLayout *layout = new QVBoxLayout(this);
+    layout->setContentsMargins(0, 0, 0, 0);
+    layout->setSpacing(0);
+
+    viewPort = new PdfViewPort(this);
+    searchPanel = new PdfSearchPanel(this);
+    searchPanel->hide();
+    searchPanel->setStyleSheet("background: #eee; border-top: 1px solid #ccc; padding: 5px;");
+
+    layout->addWidget(viewPort, 1);
+    layout->addWidget(searchPanel);
+}
+
+PdfTab::~PdfTab() {
+    viewPort->stopAllRenders();
+    QMutexLocker locker(&docMutex);
+    if (doc) {
+        delete doc;
+        doc = nullptr;
+    }
+}
+
+bool PdfTab::loadDocument() {
+    Poppler::Document *newDoc = Poppler::Document::load(filePath);
+    if (!newDoc || newDoc->isLocked()) {
+        delete newDoc;
+        return false;
+    }
+    
+    {
+        QMutexLocker locker(&docMutex);
+        doc = newDoc;
+        doc->setRenderBackend(Poppler::Document::SplashBackend);
+    }
+
+    viewPort->setFilePath(filePath);
+    viewPort->setDocument(doc, &docMutex);
+    
+    searchPanel->setFilePath(filePath);
+    searchPanel->setDocument(doc, &docMutex);
+
+    return true;
+}
 
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent) {
     loadSettings();
     setWindowTitle("Orion PDF Reader");
-    resize(900, 650);
+    resize(1030, 700);
 
     setupUI();
-
-    connect(sidebar, &LibrarySidebar::fileSelected, this, &MainWindow::openFile);
-    connect(searchPanel, &PdfSearchPanel::pageFound, this, &MainWindow::onPageFound);
-    connect(searchPanel, &PdfSearchPanel::searchReset, this, &MainWindow::onSearchReset);
-
-    connect(viewPort, &PdfViewPort::pageInViewChanged, [this](int page){
-        if (pageSelector->value() != page) {
-            pageSelector->blockSignals(true);
-            pageSelector->setValue(page);
-            pageSelector->blockSignals(false);
-        }
-    });
-
-    connect(pageSelector, QOverload<int>::of(&QSpinBox::valueChanged), [this](int page){
-        viewPort->goToPage(page);
-    });
-
-    connect(viewPort, &PdfViewPort::zoomRequested, [this](bool zoomIn){
-    double currentVal = zoomSpinBox->value();
-    if (zoomIn) {
-        zoomSpinBox->setValue(currentVal + 25.0);
-    } else {
-        zoomSpinBox->setValue(currentVal - 25.0);
-    }
-});
-
-     sidebar->scanDirectory(m_libraryPath); 
+    sidebar->scanDirectory(m_libraryPath); 
 }
 
-MainWindow::~MainWindow() {
-    viewPort->stopAllRenders();
-    QMutexLocker locker(&docMutex);
-    delete doc;
-}
+MainWindow::~MainWindow() {}
 
 void MainWindow::setupUI() {
     QMenu *settingsMenu = menuBar()->addMenu("Настройки");
@@ -73,6 +91,7 @@ void MainWindow::setupUI() {
     sidebar = new LibrarySidebar();
     sidebar->setMinimumWidth(150);
     sidebar->setMaximumWidth(500); 
+    connect(sidebar, &LibrarySidebar::fileSelected, this, &MainWindow::openFile);
     
     QWidget *rightContainer = new QWidget();
     QVBoxLayout *rightLayout = new QVBoxLayout(rightContainer);
@@ -84,26 +103,22 @@ void MainWindow::setupUI() {
     topBar->setFixedHeight(50);
     QHBoxLayout *topLayout = new QHBoxLayout(topBar);
 
-    QPushButton *btnShowSearch = new QPushButton("🔍");
+    btnShowSearch = new QPushButton("🔍");
     btnShowSearch->setFixedSize(35, 35);
     btnShowSearch->setToolTip("Поиск (Ctrl+F)");
     btnShowSearch->setStyleSheet("QPushButton { border: 1px solid #ccc; border-radius: 4px; background: white; font-size: 16px; } QPushButton:hover { background: #eee; }");
+    connect(btnShowSearch, &QPushButton::clicked, this, &MainWindow::toggleSearchPanel);
     topLayout->addWidget(btnShowSearch);
     topLayout->addStretch();
 
-    fitWidthCheck = new QCheckBox("По ширине");
-    fitWidthCheck->setChecked(true);
-    connect(fitWidthCheck, &QCheckBox::toggled, this, &MainWindow::onFitWidthToggled);
-    
     zoomSpinBox = new QDoubleSpinBox();
-    zoomSpinBox->setRange(25.0, 800.0);
+    zoomSpinBox->setRange(10.0, 300.0);
     zoomSpinBox->setValue(100.0);
-    zoomSpinBox->setSingleStep(25.0);
+    zoomSpinBox->setSingleStep(10.0);
     zoomSpinBox->setSuffix("%");
-    zoomSpinBox->setEnabled(false);
-    connect(zoomSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &MainWindow::onZoomChanged);
+    zoomSpinBox->setEnabled(true);
+    connect(zoomSpinBox, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this, &MainWindow::onZoomSpinChanged);
 
-    topLayout->addWidget(fitWidthCheck);
     topLayout->addWidget(zoomSpinBox);
 
     QFrame *line = new QFrame();
@@ -114,20 +129,23 @@ void MainWindow::setupUI() {
     pageSelector = new InvertedSpinBox();
     pageSelector->setMinimum(1);
     pageSelector->setFixedWidth(60);
+    connect(pageSelector, QOverload<int>::of(&QSpinBox::valueChanged), this, &MainWindow::onPageSpinChanged);
+    
     totalPagesLabel = new QLabel("/ 0");
     
     topLayout->addWidget(pageSelector);
     topLayout->addWidget(totalPagesLabel);
-    
-    viewPort = new PdfViewPort();
 
-    searchPanel = new PdfSearchPanel();
-    searchPanel->hide();
-    searchPanel->setStyleSheet("background: #eee; border-top: 1px solid #ccc; padding: 5px;");
+    tabWidget = new QTabWidget();
+    tabWidget->setTabsClosable(true);
+    tabWidget->setMovable(true);
+    tabWidget->setDocumentMode(true); 
+    
+    connect(tabWidget, &QTabWidget::currentChanged, this, &MainWindow::onTabChanged);
+    connect(tabWidget, &QTabWidget::tabCloseRequested, this, &MainWindow::onTabCloseRequested);
 
     rightLayout->addWidget(topBar);
-    rightLayout->addWidget(viewPort, 1);
-    rightLayout->addWidget(searchPanel);
+    rightLayout->addWidget(tabWidget, 1); 
 
     mainSplitter->addWidget(sidebar);
     mainSplitter->addWidget(rightContainer);
@@ -136,60 +154,134 @@ void MainWindow::setupUI() {
     
     setCentralWidget(mainSplitter);
 
-    auto toggleSearch = [this]() {
-        if (searchPanel->isVisible()) {
-            searchPanel->hide();
-        } else {
-            searchPanel->show();
-            searchPanel->focusIn();
-        }
-    };
-
-    connect(btnShowSearch, &QPushButton::clicked, toggleSearch);
-
     QShortcut *searchShortcut = new QShortcut(QKeySequence("Ctrl+F"), this);
-    connect(searchShortcut, &QShortcut::activated, toggleSearch);
+    connect(searchShortcut, &QShortcut::activated, this, &MainWindow::toggleSearchPanel);
+}
 
+PdfTab* MainWindow::currentTab() const {
+    return qobject_cast<PdfTab*>(tabWidget->currentWidget());
 }
 
 void MainWindow::openFile(const QString &filePath) {
+    for (int i = 0; i < tabWidget->count(); ++i) {
+        PdfTab *tab = qobject_cast<PdfTab*>(tabWidget->widget(i));
+        if (tab && tab->filePath == filePath) {
+            tabWidget->setCurrentIndex(i);
+            return;
+        }
+    }
 
-    searchPanel->cancelSearch();
-    viewPort->stopAllRenders();
-
-    searchPanel->setFilePath(filePath); 
-
-    Poppler::Document *newDoc = Poppler::Document::load(filePath);
-    if (!newDoc || newDoc->isLocked()) {
-        delete newDoc;
+    PdfTab *newTab = new PdfTab(filePath, this);
+    if (!newTab->loadDocument()) {
+        delete newTab;
         return;
     }
 
-    sidebar->markOpenedFile(filePath);
-
-    {
-        QMutexLocker locker(&docMutex);
-        if (doc) delete doc;
-        doc = newDoc;
-        doc->setRenderBackend(Poppler::Document::SplashBackend);
-    }
-
-    viewPort->setDocument(doc, &docMutex);
-    viewPort->setFilePath(filePath);
-    searchPanel->setDocument(doc, &docMutex);
+    connect(newTab->viewPort, &PdfViewPort::pageInViewChanged, this, &MainWindow::onPageInViewChanged);
+    connect(newTab->viewPort, &PdfViewPort::zoomRequested, this, &MainWindow::onZoomRequested);
     
-    int total = doc->numPages();
-    pageSelector->setMaximum(total);
-    pageSelector->setValue(1);
-    totalPagesLabel->setText(QString("/ %1").arg(total));
+    connect(newTab->searchPanel, &PdfSearchPanel::pageFound, 
+            [this, newTab](int index, QString text, QRectF rect){
+        if (currentTab() == newTab) { 
+            this->onPageFoundInTab(index, text, rect);
+        }
+    });
+    
+    connect(newTab->searchPanel, &PdfSearchPanel::searchReset, this, &MainWindow::onSearchReset);
+    newTab->viewPort->setZoom(1.0);
+
+    QFileInfo fi(filePath);
+    int index = tabWidget->addTab(newTab, fi.fileName());
+
+    tabWidget->setCurrentIndex(index); 
+    tabWidget->setTabToolTip(index, filePath);
+
+    updateSidebarMarkers();
+
+    sidebar->selectFile(filePath);
 }
 
-void MainWindow::onPageFound(int index, QString text, QRectF rect) {
+void MainWindow::onTabCloseRequested(int index) {
+    QWidget *w = tabWidget->widget(index);
+    tabWidget->removeTab(index);
+    delete w; 
+    
+    updateSidebarMarkers();
+
+    if (tabWidget->count() == 0) {
+        pageSelector->setValue(1);
+        pageSelector->setMaximum(1);
+        totalPagesLabel->setText("/ 0");
+        setWindowTitle("Orion PDF Reader");
+    }
+}
+
+void MainWindow::onTabChanged(int index) {
+    if (index < 0) return;
+
+    PdfTab *tab = currentTab();
+    if (!tab || !tab->doc) return;
+
+    setWindowTitle(QString("Orion PDF Reader - %1").arg(QFileInfo(tab->filePath).fileName()));
+
+    int total = tab->doc->numPages();
+    pageSelector->setMaximum(total);
+    totalPagesLabel->setText(QString("/ %1").arg(total));
+    
+    zoomSpinBox->blockSignals(true);
+    zoomSpinBox->setValue(tab->viewPort->getZoom() * 100.0);
+    zoomSpinBox->blockSignals(false);
+    
+    sidebar->selectFile(tab->filePath);
+}
+
+void MainWindow::updateSidebarMarkers() {
+    QStringList paths;
+    for (int i = 0; i < tabWidget->count(); ++i) {
+        PdfTab *tab = qobject_cast<PdfTab*>(tabWidget->widget(i));
+        if (tab) {
+            paths.append(tab->filePath);
+        }
+    }
+    sidebar->updateOpenedFiles(paths);
+}
+
+void MainWindow::onPageInViewChanged(int page) {
+    PdfTab *tab = currentTab();
+    if (tab && sender() == tab->viewPort) {
+        if (pageSelector->value() != page) {
+            pageSelector->blockSignals(true);
+            pageSelector->setValue(page);
+            pageSelector->blockSignals(false);
+        }
+    }
+}
+
+void MainWindow::onZoomRequested(bool zoomIn) {
+    PdfTab *tab = currentTab();
+    if (tab && sender() == tab->viewPort) {
+        double currentZoomPercent = tab->viewPort->getZoom() * 100.0;
+        double step = 10.0;
+
+        if (zoomIn) {
+            currentZoomPercent += step;
+        } else {
+            currentZoomPercent -= step;
+        }
+        
+        zoomSpinBox->setValue(currentZoomPercent);
+    }
+}
+
+void MainWindow::onPageFoundInTab(int index, QString text, QRectF rect) {
+    PdfTab *tab = currentTab();
+    if (!tab) return;
+    
     double yFraction = 0.0;
     {
-        QMutexLocker locker(&docMutex);
-        if (doc) {
-            Poppler::Page *p = doc->page(index);
+        QMutexLocker locker(&tab->docMutex);
+        if (tab->doc) {
+            Poppler::Page *p = tab->doc->page(index);
             if (p) {
                 yFraction = rect.top() / p->pageSize().height();
                 delete p;
@@ -197,21 +289,41 @@ void MainWindow::onPageFound(int index, QString text, QRectF rect) {
         }
     }
     
-    viewPort->updateHighlight(text, rect);
-    viewPort->goToPage(index + 1, yFraction - 0.1);
+    tab->viewPort->updateHighlight(text, rect);
+    tab->viewPort->goToPage(index + 1, yFraction - 0.1);
 }
 
 void MainWindow::onSearchReset() {
-    viewPort->clearSearch();
+    PdfTab *tab = currentTab();
+    if (tab && sender() == tab->searchPanel) {
+        tab->viewPort->clearSearch();
+    }
 }
 
-void MainWindow::onZoomChanged(double value) {
-    viewPort->setZoom(value / 100.0);
+void MainWindow::toggleSearchPanel() {
+    PdfTab *tab = currentTab();
+    if (!tab) return;
+
+    if (tab->searchPanel->isVisible()) {
+        tab->searchPanel->hide();
+    } else {
+        tab->searchPanel->show();
+        tab->searchPanel->focusIn();
+    }
 }
 
-void MainWindow::onFitWidthToggled(bool checked) {
-    zoomSpinBox->setEnabled(!checked);
-    viewPort->setFitWidth(checked);
+void MainWindow::onZoomSpinChanged(double value) {
+    PdfTab *tab = currentTab();
+    if (tab) {
+        tab->viewPort->setZoom(value / 100.0);
+    }
+}
+
+void MainWindow::onPageSpinChanged(int page) {
+    PdfTab *tab = currentTab();
+    if (tab) {
+        tab->viewPort->goToPage(page);
+    }
 }
 
 void MainWindow::loadSettings() {

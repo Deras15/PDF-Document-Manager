@@ -60,7 +60,7 @@ void LibrarySidebar::scanDirectory(const QString &path) {
     }
 }
 
-void LibrarySidebar::markOpenedFile(const QString &filePath) {
+void LibrarySidebar::updateOpenedFiles(const QStringList &filePaths) {
     QTreeWidgetItemIterator it(this);
     while (*it) {
         QString itemPath = (*it)->data(0, Qt::UserRole).toString();
@@ -72,14 +72,26 @@ void LibrarySidebar::markOpenedFile(const QString &filePath) {
             (*it)->setFont(0, font());
         }
 
-        if (!itemPath.isEmpty() && itemPath == filePath) {
+        if (!itemPath.isEmpty() && filePaths.contains(itemPath)) {
             (*it)->setText(0, "● " + currentText);
             
             QFont boldFont = (*it)->font(0);
             boldFont.setBold(true);
             (*it)->setFont(0, boldFont);
-            
+        }
+        ++it;
+    }
+}
+
+void LibrarySidebar::selectFile(const QString &filePath) {
+    QTreeWidgetItemIterator it(this);
+    while (*it) {
+        QString itemPath = (*it)->data(0, Qt::UserRole).toString();
+        if (itemPath == filePath) {
+            clearSelection();
+            setCurrentItem(*it);
             scrollToItem(*it);
+            return; 
         }
         ++it;
     }

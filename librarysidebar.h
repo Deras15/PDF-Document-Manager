@@ -20,7 +20,8 @@ class LibrarySidebar : public QTreeWidget {
 public:
     explicit LibrarySidebar(QWidget *parent = nullptr);
     void scanDirectory(const QString &path);
-    void markOpenedFile(const QString &filePath);
+    void updateOpenedFiles(const QStringList &filePaths);
+    void selectFile(const QString &filePath);
 
 signals:
     void fileSelected(const QString &filePath);
