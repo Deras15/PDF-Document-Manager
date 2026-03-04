@@ -38,6 +38,9 @@ public:
     PdfSearchPanel *searchPanel = nullptr;
 
     bool loadDocument();
+
+signals:
+    void pinRequested();
 };
 
 class MainWindow : public QMainWindow {
@@ -47,7 +50,10 @@ public:
     ~MainWindow();
 
 private slots:
-    void openFile(const QString &filePath);
+    void openFilePreview(const QString &filePath);
+    void openFilePinned(const QString &filePath);
+    void openFilesPinned(const QStringList &filePaths);
+    void pinPreviewTab();
     void onTabChanged(int index);
     void onTabCloseRequested(int index);
     void onPageInViewChanged(int page);
@@ -64,11 +70,11 @@ private:
     void loadSettings();
     void saveSettings();
     void setupUI();
-    
     void updateSidebarMarkers();
+    void internalOpenFile(const QString &filePath, bool preview);
 
+    PdfTab *m_previewTab = nullptr;
     QString m_libraryPath;
-
     QTabWidget *tabWidget; 
     LibrarySidebar *sidebar;
     InvertedSpinBox *pageSelector;

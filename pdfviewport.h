@@ -43,11 +43,13 @@ public:
 signals:
     void pageInViewChanged(int page);
     void zoomRequested(bool zoomIn);
+    void interacted();
 
 protected:
     void resizeEvent(QResizeEvent *event) override;
     void wheelEvent(QWheelEvent *event) override;
     void showEvent(QShowEvent *event) override;
+    bool viewportEvent(QEvent *event) override;
 
 private slots:
     void onRenderTimeout();

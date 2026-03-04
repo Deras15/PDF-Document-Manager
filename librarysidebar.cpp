@@ -17,6 +17,7 @@ LibrarySidebar::LibrarySidebar(QWidget *parent) : QTreeWidget(parent) {
     setColumnCount(1);
     
     connect(this, &LibrarySidebar::itemClicked, this, &LibrarySidebar::onItemClickedInternal);
+    connect(this, &LibrarySidebar::itemDoubleClicked, this, &LibrarySidebar::onItemDoubleClickedInternal);
 }
 
 void LibrarySidebar::onItemClickedInternal(QTreeWidgetItem *item, int column) {
@@ -94,5 +95,24 @@ void LibrarySidebar::selectFile(const QString &filePath) {
             return; 
         }
         ++it;
+    }
+}
+
+void LibrarySidebar::onItemDoubleClickedInternal(QTreeWidgetItem *item, int column) {
+    Q_UNUSED(column);
+    QString path = item->data(0, Qt::UserRole).toString();
+    if (!path.isEmpty() && QFile::exists(path)) {
+        emit fileDoubleClicked(path);
+    } else {
+        QStringList paths;
+        for (int i = 0; i < item->childCount(); ++i) {
+            QString childPath = item->child(i)->data(0, Qt::UserRole).toString();
+            if (!childPath.isEmpty() && QFile::exists(childPath)) {
+                paths.append(childPath);
+            }
+        }
+        if (!paths.isEmpty()) {
+            emit folderDoubleClicked(paths);
+        }
     }
 }

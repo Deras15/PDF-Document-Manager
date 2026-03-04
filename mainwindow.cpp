@@ -35,6 +35,9 @@ PdfTab::PdfTab(const QString &path, QWidget *parent)
 
     layout->addWidget(viewPort, 1);
     layout->addWidget(searchPanel);
+    
+    connect(viewPort, &PdfViewPort::interacted, this, &PdfTab::pinRequested);
+    connect(searchPanel, &PdfSearchPanel::pageFound, this, &PdfTab::pinRequested);
 }
 
 PdfTab::~PdfTab() {
@@ -91,7 +94,10 @@ void MainWindow::setupUI() {
     sidebar = new LibrarySidebar();
     sidebar->setMinimumWidth(150);
     sidebar->setMaximumWidth(500); 
-    connect(sidebar, &LibrarySidebar::fileSelected, this, &MainWindow::openFile);
+
+    connect(sidebar, &LibrarySidebar::fileSelected, this, &MainWindow::openFilePreview);
+    connect(sidebar, &LibrarySidebar::fileDoubleClicked, this, &MainWindow::openFilePinned);
+    connect(sidebar, &LibrarySidebar::folderDoubleClicked, this, &MainWindow::openFilesPinned);
     
     QWidget *rightContainer = new QWidget();
     QVBoxLayout *rightLayout = new QVBoxLayout(rightContainer);
@@ -162,13 +168,51 @@ PdfTab* MainWindow::currentTab() const {
     return qobject_cast<PdfTab*>(tabWidget->currentWidget());
 }
 
-void MainWindow::openFile(const QString &filePath) {
+void MainWindow::openFilePreview(const QString &filePath) {
+    internalOpenFile(filePath, true);
+}
+
+void MainWindow::openFilePinned(const QString &filePath) {
+    internalOpenFile(filePath, false);
+}
+
+void MainWindow::openFilesPinned(const QStringList &filePaths) {
+    for (const QString &path : filePaths) {
+        internalOpenFile(path, false);
+    }
+}
+
+void MainWindow::pinPreviewTab() {
+    if (m_previewTab) {
+        int idx = tabWidget->indexOf(m_previewTab);
+        if (idx != -1) {
+            QFileInfo fi(m_previewTab->filePath);
+            tabWidget->setTabText(idx, fi.fileName());
+        }
+        m_previewTab = nullptr;
+    }
+}
+
+void MainWindow::internalOpenFile(const QString &filePath, bool preview) {
+
     for (int i = 0; i < tabWidget->count(); ++i) {
         PdfTab *tab = qobject_cast<PdfTab*>(tabWidget->widget(i));
         if (tab && tab->filePath == filePath) {
             tabWidget->setCurrentIndex(i);
+            if (!preview && tab == m_previewTab) {
+                pinPreviewTab();
+            }
             return;
         }
+    }
+
+    if (preview && m_previewTab != nullptr) {
+        int idx = tabWidget->indexOf(m_previewTab);
+        if (idx != -1) {
+            tabWidget->removeTab(idx);
+            m_previewTab->deleteLater();
+        }
+        m_previewTab = nullptr;
     }
 
     PdfTab *newTab = new PdfTab(filePath, this);
@@ -188,24 +232,38 @@ void MainWindow::openFile(const QString &filePath) {
     });
     
     connect(newTab->searchPanel, &PdfSearchPanel::searchReset, this, &MainWindow::onSearchReset);
+    connect(newTab, &PdfTab::pinRequested, this, &MainWindow::pinPreviewTab);
+    
     newTab->viewPort->setZoom(1.0);
 
     QFileInfo fi(filePath);
-    int index = tabWidget->addTab(newTab, fi.fileName());
+    QString tabName = fi.fileName();
+    if (preview) {
+        tabName = tabName + " (Просмотр)";
+    }
+
+    int index = tabWidget->addTab(newTab, tabName);
 
     tabWidget->setCurrentIndex(index); 
     tabWidget->setTabToolTip(index, filePath);
 
-    updateSidebarMarkers();
+    if (preview) {
+        m_previewTab = newTab;
+    }
 
+    updateSidebarMarkers();
     sidebar->selectFile(filePath);
 }
 
 void MainWindow::onTabCloseRequested(int index) {
     QWidget *w = tabWidget->widget(index);
-    tabWidget->removeTab(index);
-    delete w; 
+
+    if (w == m_previewTab) {
+        m_previewTab = nullptr;
+    }
     
+    tabWidget->removeTab(index);
+    w->deleteLater();
     updateSidebarMarkers();
 
     if (tabWidget->count() == 0) {
@@ -268,7 +326,7 @@ void MainWindow::onZoomRequested(bool zoomIn) {
         } else {
             currentZoomPercent -= step;
         }
-        
+
         zoomSpinBox->setValue(currentZoomPercent);
     }
 }

@@ -25,9 +25,12 @@ public:
 
 signals:
     void fileSelected(const QString &filePath);
+    void fileDoubleClicked(const QString &filePath);
+    void folderDoubleClicked(const QStringList &filePaths);
 
 private slots:
     void onItemClickedInternal(QTreeWidgetItem *item, int column);
+    void onItemDoubleClickedInternal(QTreeWidgetItem *item, int column);
 };
 
 #endif // LIBRARYSIDEBAR_H

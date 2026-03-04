@@ -39,6 +39,7 @@ PdfViewPort::PdfViewPort(QWidget *parent) : QScrollArea(parent) {
     
     connect(renderTimer, &QTimer::timeout, this, &PdfViewPort::onRenderTimeout);
     connect(verticalScrollBar(), &QScrollBar::valueChanged, this, &PdfViewPort::onScrollValueChanged);
+    connect(verticalScrollBar(), &QScrollBar::sliderPressed, this, &PdfViewPort::interacted);
 }
 
 PdfViewPort::~PdfViewPort() {
@@ -397,10 +398,18 @@ void PdfViewPort::clearLayout() {
 }
 
 void PdfViewPort::wheelEvent(QWheelEvent *event) {
+    emit interacted();
     if (event->modifiers() & Qt::ControlModifier) {
         emit zoomRequested(event->angleDelta().y() > 0);
         event->accept(); 
     } else {
         QScrollArea::wheelEvent(event);
     }
+}
+
+bool PdfViewPort::viewportEvent(QEvent *event) {
+    if (event->type() == QEvent::MouseButtonPress || event->type() == QEvent::TouchBegin) {
+        emit interacted();
+    }
+    return QScrollArea::viewportEvent(event);
 }
